@@ -1,2 +1,4 @@
 -- Baseline: SQLAlchemy metadata creates datasets, operating_windows, studies, runs, reviews, reports, users and audits on a new PostgreSQL database.
 -- Observations and immutable report snapshots use JSON. Existing database upgrades require a reviewed migration; no destructive auto-upgrades.
+-- Cumulative meter import adds datasets.source_mode (hourly|cumulative). For databases created before this change:
+--   ALTER TABLE datasets ADD COLUMN source_mode VARCHAR(20) NOT NULL DEFAULT 'hourly';

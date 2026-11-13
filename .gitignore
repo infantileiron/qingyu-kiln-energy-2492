@@ -30,3 +30,6 @@ target/
 *.o
 *.obj
 .DS_Store
+
+# 批次测试产物不进源码包
+test-artifacts/

@@ -5,19 +5,31 @@ from src.config.database import initialize,Session
 from src.models import MeterDataset,OperatingWindow,ChangeStudy,ChangeRun,IncidentReview,Report,User
 from src.utils.security import hash_password
 from src.services.run_service import compute
+from src.services.readings import convert_cumulative
 
-def make_readings():
- rng=random.Random(20261112);rows=[]
+def generate():
+ rng=random.Random(20261112);rows=[];true_kwh=[]
  for i in range(720):
   output=160+rng.uniform(-15,15);level=2.4 if i<240 else 3.25 if i<480 else 2.7
   intensity=level+.025*math.sin(i/7)+rng.gauss(0,.018)
   if i in [110,390,610]:intensity+=1.2
-  row={"timestamp":(datetime(2026,10,1,tzinfo=timezone.utc)+timedelta(hours=i)).isoformat(),"kwh":round(output*intensity,4),"output_kg":round(output,4),"status":"running"}
-  if i in [55,56,300,301]:row.update(status="stopped",kwh=8.,output_kg=0.)
+  kwh=round(output*intensity,4);status="running";output_kg=round(output,4)
+  if i in [55,56,300,301]:kwh,output_kg,status=8.,0.,"stopped"
+  true_kwh.append(kwh)
+  row={"timestamp":(datetime(2026,10,1,tzinfo=timezone.utc)+timedelta(hours=i)).isoformat(),"kwh":kwh,"output_kg":output_kg,"status":status}
   if i==420:row["output_kg"]=0.
   if i==500:row["kwh"]=None
   rows.append(row)
- return rows
+ return rows,true_kwh
+
+def make_readings():return generate()[0]
+
+def make_cumulative_readings():
+ hourly,true_kwh=generate();meter=10000.;records=[]
+ for i,row in enumerate(hourly):
+  meter=round(meter+true_kwh[i],4)
+  records.append({"timestamp":row["timestamp"],"kwh":None if i==500 else meter,"output_kg":row["output_kg"],"status":row["status"]})
+ return convert_cumulative(records)
 
 def seed():
  initialize()
@@ -26,6 +38,7 @@ def seed():
    email=role+"@energy.demo"
    if not db.scalar(select(User).where(User.email==email)):db.add(User(id="user-"+role,email=email,role=role,password_hash=hash_password("KilnDemo2026!")))
   if not db.get(MeterDataset,"demo-dataset"):db.add(MeterDataset(id="demo-dataset",name="青屿一号窑 2026年10月",readings=make_readings(),description="720条小时电量/产量，包含停机、零产量和缺测样例"))
+  if not db.get(MeterDataset,"demo-dataset-cumulative"):db.add(MeterDataset(id="demo-dataset-cumulative",name="青屿一号窑 2026年10月（新电表累计示数）",readings=make_cumulative_readings(),source_mode="cumulative",description="同一月份新电表累计示数换算：首条作基准，10月21日缺测后首个有效示数只作新基准；换算电量与小时电量批次同源"))
   if not db.get(OperatingWindow,"demo-window"):db.add(OperatingWindow(id="demo-window",name="十月全月工况",start_at="2026-10-01T00:00:00+00:00",end_at="2026-10-30T23:00:00+00:00",note="含停机观测，计算时单独隔离；最小段长以有效观测数计"))
   db.commit()
   if not db.get(ChangeStudy,"demo-study"):db.add(ChangeStudy(id="demo-study",name="一号窑换料工况复核",dataset_id="demo-dataset",window_id="demo-window",config={"penalty":6.,"min_segment":24,"anomaly_threshold":3.5,"noise_floor":.02}))

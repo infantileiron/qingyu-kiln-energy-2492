@@ -7,3 +7,4 @@ class MeterDataset(RecordMixin,Base):
  name:Mapped[str]=mapped_column(String(180),unique=True)
  readings:Mapped[list]=mapped_column(JSON)
  description:Mapped[str]=mapped_column(Text,default="")
+ source_mode:Mapped[str]=mapped_column(String(20),default="hourly")

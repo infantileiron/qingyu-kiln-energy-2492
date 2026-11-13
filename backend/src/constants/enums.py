@@ -11,3 +11,6 @@ class RunStatus(StrEnum):
 class MeterStatus(StrEnum):
  RUNNING="running"
  STOPPED="stopped"
+class SourceMode(StrEnum):
+ HOURLY="hourly"
+ CUMULATIVE="cumulative"

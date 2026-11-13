@@ -54,11 +54,13 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 未登录401，错角色403，未批准复核生成报告409。同一已审复核重复归档返回同一快照，不覆盖标题及结果。
 
-共享枚举：角色/运行状态在 `backend/src/constants/enums.py` 的Role/RunStatus和 `frontend/src/constants/enums.ts` 的roles/runStatuses；计量状态MeterStatus与meterStatuses分处同两文件，前端Role类型见types/domain.ts。
+共享枚举：角色/运行状态在 `backend/src/constants/enums.py` 的Role/RunStatus和 `frontend/src/constants/enums.ts` 的roles/runStatuses；计量状态MeterStatus与meterStatuses、计量格式SourceMode与sourceModes分处同两文件，前端Role类型见types/domain.ts。
 
 ## 算法、单位与失败态
 
 CSV列 `timestamp,kwh,output_kg,status`；最多5000行。时间必须含时区，归一UTC、排序，等价时刻跨时区重复也拒绝。未知状态、负值、NaN、Infinity在导入时422拒绝。空电量/产量可入库，标为缺测；stopped、零产量、缺测分别隔离，保留原因，不把0当能耗值。
+
+新电表导出的是累计示数，直接当小时电量会制造假变点。导入时选择累计示数格式（`mode=cumulative`），CSV列 `timestamp,meter_kwh,output_kg,status`，兼容旧字段 `kwh` 作示数列。乱序记录归一UTC后排序，仅对相邻整小时示数作差得到小时电量，产量与状态仍属当前小时。首条示数只作基准（first_baseline）；示数回退隔离（rollback）后以当前值重建基准；示数缺测隔离（missing_measurement）并断开计量链，缺测后首个有效示数只作新基准（rebased）；相邻记录非整小时间隔按跨小时缺口隔离（hour_gap）并重建基准。五类原因分别保留，不跨缺口分摊电量。批次记录同时保留原示数、换算电量与隔离原因供导入页核对；换算结果与直接导入的小时电量走同一归一、分段、异常评分与报告路径。
 
 归一口径为 x_i=kWh_i/output_kg_i（kWh/kg）。按窗口两端包含取样，至少8条有效运行观测。最小段长以**有效观测数量**计，不是小时长度；停机与缺测造成的时间空隙不插值。图横轴为排序后的有效观测序号，日期只作位置标记。
 
@@ -87,12 +89,12 @@ DP在所有满足最小段长的分割中求解：
 7. 09:23 标注换料记录与计量核查建议，不直接认定设备故障。
 8. 09:28 管理员批准并归档；viewer下载含714条有效观测和有限分数的CSV底稿。
 
-固定种子20261112产生720条模拟小时观测。默认研究实际得到3工况段、714有效/6隔离、3尖峰，与生成的工况及尖峰位置一致。演示实体自然键幂等，手工修改说明不被种子覆盖。
+固定种子20261112产生720条模拟小时观测。默认研究实际得到3工况段、714有效/6隔离、3尖峰，与生成的工况及尖峰位置一致。同一批观测另生成新电表累计示数批次（demo-dataset-cumulative，首条基准+缺测重建基准，712有效/8隔离），用于核对两种格式的等价分析。演示实体自然键幂等，手工修改说明不被种子覆盖。
 
 ## 已知差异
 
 - Redis列表取走任务后worker崩溃不会自动重投；可建立新运行重试，未实现租约与取消。
-- 新库自动建表；存量库没有版本化升级/回滚工具。列表最多200条实体，尚无服务器分页。
+- 新库自动建表；存量库没有版本化升级/回滚工具。列表最多200条实体，尚无服务器分页。累计示数导入为datasets新增source_mode列，存量库需执行 `migrations/001_schema.sql` 注释中的ALTER TABLE或重建。
 - 仅有限CSV导入，不接真实设备或自动校验电量/产量计量周期是否一致；由使用者复核口径。
 - 控制图展示与诊断为模拟教学，不是设备安全监测。Google Fonts需联网，断网回退字体。
 
